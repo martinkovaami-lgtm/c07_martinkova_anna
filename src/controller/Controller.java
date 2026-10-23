@@ -1,5 +1,8 @@
 package controller;
 
+import graphics.filler.RecursiveSeedFiller;
+import graphics.filler.SeedFiller;
+import graphics.filler.StackSeedFiller;
 import graphics.rasterizer.LineRasterizer;
 import graphics.rasterizer.PolygonOutlineRasterizer;
 import graphics.rasterizer.PolygonRasterizer;
@@ -8,6 +11,7 @@ import model.Line;
 import model.Point;
 import model.Polygon;
 import view.Canvas;
+import view.gui.Toolbar;
 
 import javax.swing.SwingUtilities;
 import java.awt.Color;
@@ -23,10 +27,14 @@ public class Controller {
     // tady je barva hotových úseček a barva náhledu
     private static final int LINE_COLOR = Color.WHITE.getRGB();
     private static final int PREVIEW_COLOR = Color.RED.getRGB();
+    private static final int FILL_COLOR = new Color(0x58BFA9).getRGB();
 
     private final Canvas canvas;
+    private final Toolbar toolbar;
     private final LineRasterizer rasterizer;
     private final PolygonRasterizer polygonRasterizer;
+    private final SeedFiller seedFiller;
+
 
     // polygon, který je vytvářený pravým tlačítkem
     private final Polygon polygon = new Polygon();
@@ -42,16 +50,35 @@ public class Controller {
 
     private Line previewPolygonLine;
 
-    public Controller(Canvas canvas) {
+    // bod, ze kterého se vyplňuje (seed fill), a režim výběru tohoto bodu
+    private Point seedFillPoint;
+    private boolean seedFillMode;
+
+
+    public Controller(Canvas canvas, Toolbar toolbar) {
         this.canvas = canvas;
+        this.toolbar = toolbar;
         this.rasterizer = new TrivialLineRasterizer(canvas.getRaster());
         this.polygonRasterizer = new PolygonOutlineRasterizer(rasterizer);
+        this.seedFiller = new StackSeedFiller(canvas.getRaster());
     }
 
     /* ---------------------------------------------- Hlavní funkce ---------------------------------------------- */
 
     public void init() {
         canvas.clear();
+
+        // tlačítka v toolbaru
+        toolbar.addClearListener(e -> {
+            clearDrawing();
+            canvas.requestFocusInWindow();
+        });
+        toolbar.addSeedFillListener(e -> {
+            toggleSeedFillMode();
+            canvas.requestFocusInWindow();
+        });
+
+
 
         MouseAdapter mouse = new MouseAdapter() {
 
@@ -60,10 +87,15 @@ public class Controller {
                 canvas.requestFocusInWindow(); // aby fungovala klávesnice
 
                 if (SwingUtilities.isLeftMouseButton(e)) {
-                    // LEVÉ tlačítko: začátek té úsečky (zatím má nulovou délku)
-                    Point p = getPoint(e);
-                    dragLine = new Line(p, p, PREVIEW_COLOR);
-                    render();
+                    if (seedFillMode) {
+                        // v režimu seed fill levé tlačítko vybírá bod pro výplň
+                        fillAt(e);
+                    } else {
+                        // LEVÉ tlačítko: začátek té úsečky (zatím má nulovou délku)
+                        Point p = getPoint(e);
+                        dragLine = new Line(p, p, PREVIEW_COLOR);
+                        render();
+                    }
                 } else if (SwingUtilities.isRightMouseButton(e)) {
                     // PRAVÉ tlačítko: přidám vrchol pro polygon
                     if (!polygon.isFinished()){
@@ -135,12 +167,7 @@ public class Controller {
             public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_C) {
                     // C: smazat vše a umožnit kreslit od začátku
-                    polygon.clear();
-                    straightLines.clear();
-                    lastVertex = null;
-                    dragLine = null;
-                    previewPolygonLine = null;
-                    render();
+                    clearDrawing();
                 } else if (e.getKeyCode() == KeyEvent.VK_ENTER) {
                     // ENTER: dokončit polygon
                     finishPolygon();
@@ -174,6 +201,10 @@ public class Controller {
             rasterizer.rasterize(dragLine);
         }
 
+        if (seedFillPoint != null) {
+            seedFiller.fill(seedFillPoint.getX(), seedFillPoint.getY(), canvas.getBackgroundColor(), FILL_COLOR);
+        }
+
         // Vykreslení pružné čáry polygonu, pokud právě táhneme
 
 
@@ -191,6 +222,41 @@ public class Controller {
         }
         dragLine = new Line(startPoint, startPoint, PREVIEW_COLOR);
         render();
+    }
+
+    private void clearDrawing() {
+        polygon.clear();
+        straightLines.clear();
+        lastVertex = null;
+        dragLine = null;
+        previewPolygonLine = null;
+        seedFillPoint = null;
+        seedFillMode = false;
+        toolbar.setSeedFillMode(false);
+        render();
+    }
+
+    // Zapne / vypne režim výběru bodu pro seed fill
+    private void toggleSeedFillMode() {
+        seedFillMode = !seedFillMode;
+        toolbar.setSeedFillMode(seedFillMode);
+    }
+
+    // Klik v režimu seed fill: na prázdné místo vloží výplň, na vyplněnou oblast ji zruší
+    private void fillAt(MouseEvent e) {
+        Point seed = getPoint(e);
+        Integer seedColor = canvas.getRaster().getPixel(seed.getX(), seed.getY());
+        if (seedColor == null) {
+            return;
+        }
+
+        if (seedFillPoint != null && seedColor == FILL_COLOR) {
+            seedFillPoint = null;
+            render();
+        } else if (seedColor == canvas.getBackgroundColor()) {
+            seedFillPoint = seed;
+            render();
+        }
     }
 
 

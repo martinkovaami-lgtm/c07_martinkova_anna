@@ -10,7 +10,7 @@ public class Main {
     public static void main(String[] args) {
         invokeLater(() -> {
             Window window = new Window(800, 600);
-            new Controller(window.getCanvas()).init();
+            new Controller(window.getCanvas(), window.getToolbar()).init();
         });
     }
 
