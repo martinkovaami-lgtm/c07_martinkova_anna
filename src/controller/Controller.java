@@ -18,21 +18,9 @@ import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Zpracovává vstup od uživatele a řídí vykreslování na {@link Canvas}.
- * <ul>
- *   <li>LEVÉ tlačítko: stisknout, táhnout a pustit = přímá úsečka.</li>
- *   <li>PRAVÉ tlačítko: každé kliknutí přidá vrchol polygonu (od 3 bodů je polygon hotový a uzavřený).</li>
- *   <li>PROSTŘEDNÍ tlačítko nebo klávesa ENTER: zamkne polygon (už nejdou přidávat body).</li>
- *   <li>Klávesa C: smaže všechno.</li>
- * </ul>
- *
- * @author PGRF FIM UHK
- * @version 2026
- */
 public class Controller {
 
-    // barva hotových úseček a barva náhledu (červená)
+    // tady je barva hotových úseček a barva náhledu
     private static final int LINE_COLOR = Color.WHITE.getRGB();
     private static final int PREVIEW_COLOR = Color.RED.getRGB();
 
@@ -40,18 +28,19 @@ public class Controller {
     private final LineRasterizer rasterizer;
     private final PolygonRasterizer polygonRasterizer;
 
-    // polygon vytvářený pravým tlačítkem
+    // polygon, který je vytvářený pravým tlačítkem
     private final Polygon polygon = new Polygon();
 
-    // samostatné úsečky vytvořené levým tlačítkem (tažením)
+    // úsečky vytvořené levým tlačítkem
     private final List<Line> straightLines = new ArrayList<>();
 
-    // poslední vrchol polygonu (null = zatím žádný). Potřebujeme ho, protože
-    // po prvním kliknutí ještě neexistuje žádná úsečka, ze které bychom vzali koncový bod.
+    // poslední vrchol polygonu
     private Point lastVertex;
 
-    // náhled úsečky, kterou právě táhneme levým tlačítkem (null = netáhneme)
+    // náhled úsečky, kterou právě táhnu levým tlačítkem
     private Line dragLine;
+
+    private Line previewPolygonLine;
 
     public Controller(Canvas canvas) {
         this.canvas = canvas;
@@ -71,40 +60,67 @@ public class Controller {
                 canvas.requestFocusInWindow(); // aby fungovala klávesnice
 
                 if (SwingUtilities.isLeftMouseButton(e)) {
-                    // LEVÉ tlačítko: začátek tažené úsečky (zatím nulové délky)
+                    // LEVÉ tlačítko: začátek té úsečky (zatím má nulovou délku)
                     Point p = getPoint(e);
                     dragLine = new Line(p, p, PREVIEW_COLOR);
                     render();
                 } else if (SwingUtilities.isRightMouseButton(e)) {
-                    // PRAVÉ tlačítko: přidáme vrchol polygonu
-                    startLine(e);
-                } else if (SwingUtilities.isMiddleMouseButton(e)) {
-                    // PROSTŘEDNÍ tlačítko: dokončíme polygon
-                    finishPolygon();
+                    // PRAVÉ tlačítko: přidám vrchol pro polygon
+                    if (!polygon.isFinished()){
+                        Point p = getPoint(e);
+                        if (lastVertex == null){
+                            lastVertex = p;
+                        }
+
+                        previewPolygonLine = new Line(lastVertex, p, PREVIEW_COLOR);
+                        render();
+                    }
                 }
+                else {
+                    startLine(e);
+                }
+
             }
 
             @Override
             public void mouseDragged(MouseEvent e) {
-                // při tažení levým tlačítkem aktualizujeme koncový bod náhledu
-                if (dragLine != null) {
+                // při tažení levým tlačítkem se aktualizuje koncový bod náhledu
+                if (SwingUtilities.isLeftMouseButton(e) && dragLine != null) {
+                    // Aktualizace pružné čáry pro úsečku
                     dragLine = new Line(dragLine.getPoint1(), getPoint(e), PREVIEW_COLOR);
+                    render();
+                } else if (SwingUtilities.isRightMouseButton(e) && previewPolygonLine != null && !polygon.isFinished()) {
+                    // Aktualizace pružné čáry pro polygon
+                    previewPolygonLine = new Line(lastVertex, getPoint(e), PREVIEW_COLOR);
                     render();
                 }
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                // puštění levého tlačítka: tažená úsečka se stane trvalou
+                Point endPoint = getPoint(e);
+                // puštění levého tlačítka: úsečka se stane trvalou
                 if (SwingUtilities.isLeftMouseButton(e) && dragLine != null) {
                     Point start = dragLine.getPoint1();
-                    Point end = getPoint(e);
+                    Point end = dragLine.getPoint2();
                     dragLine = null; // náhled už nepotřebujeme
 
-                    // prosté kliknutí bez tažení (start == konec) nic nevytvoří
+                    // Když jenom klikneš a netáhneš (start == konec) nic nevytvoří
                     if (start.getX() != end.getX() || start.getY() != end.getY()) {
                         straightLines.add(new Line(start, end, LINE_COLOR));
                     }
+                    render();
+
+                }
+                else if (SwingUtilities.isRightMouseButton(e) && previewPolygonLine != null && !polygon.isFinished()) {
+                    // Puštění pravého tlačítka: přidání hrany a vrcholu do polygonu
+                    previewPolygonLine = null; // smazání náhledu
+
+                    // Přidáme hranu z předchozího vrcholu do aktuálního místa puštění
+                    polygon.addLine(new Line(lastVertex, endPoint, LINE_COLOR));
+
+                    // Tento nový bod se stává výchozím vrcholem pro další tažení
+                    lastVertex = endPoint;
                     render();
                 }
             }
@@ -112,17 +128,18 @@ public class Controller {
         canvas.addMouseListener(mouse);
         canvas.addMouseMotionListener(mouse);
 
-        // Obsluha klávesnice
+        // ovládání klávecnice
         canvas.setFocusable(true);
         canvas.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_C) {
                     // C: smazat vše a umožnit kreslit od začátku
-                    polygon.clear();       // odstraní úsečky a zruší příznak "dokončený"
+                    polygon.clear();
                     straightLines.clear();
                     lastVertex = null;
                     dragLine = null;
+                    previewPolygonLine = null;
                     render();
                 } else if (e.getKeyCode() == KeyEvent.VK_ENTER) {
                     // ENTER: dokončit polygon
@@ -135,7 +152,7 @@ public class Controller {
         canvas.requestFocusInWindow();
     }
 
-    /** Překreslí celou scénu od nuly. */
+    //Překreslí celou scénu
     private void render() {
         canvas.clear();
 
@@ -144,65 +161,56 @@ public class Controller {
             rasterizer.rasterize(line);
         }
 
-        // polygon (od 3 vrcholů se hned kreslí i uzavírací úsečka - viz PolygonOutlineRasterizer)
-        polygonRasterizer.rasterize(polygon);
+        // polygon (od 3 vrcholů se hned kreslí i uzavírací úsečka)
+        polygonRasterizer.rasterize(polygon, previewPolygonLine);
 
-        // po prvním kliknutí ještě není žádná úsečka - nakreslíme aspoň bod
+        // po prvním kliknutí ještě není žádná úsečka - nakreslí se bod
         if (lastVertex != null && polygon.getLines().isEmpty()) {
             rasterizer.rasterize(new Line(lastVertex, lastVertex, LINE_COLOR));
         }
 
-        // náhled úsečky, kterou právě táhneme levým tlačítkem
+        // náhled úsečky, kterou právě táhnu levým tlačítkem
         if (dragLine != null) {
             rasterizer.rasterize(dragLine);
         }
 
+        // Vykreslení pružné čáry polygonu, pokud právě táhneme
+
+
         canvas.repaint();
     }
 
-    /**
-     * Zahájí/přidá novou úsečku polygonu při kliknutí pravým tlačítkem.
-     */
+
+     //přidá novou úsečku polygonu při kliknutí pravým tlačítkem
+
     private void startLine(MouseEvent e) {
-        // 1. dokončenému polygonu už nic nepřidáváme
-        if (polygon.isFinished()) {
-            return;
+
+        Point startPoint = polygon.getLastPoint();
+        if (startPoint == null) {
+            startPoint = getPoint(e);
         }
-
-        // 2. aktuální pozice myši
-        Point actualPosition = getPoint(e);
-
-        if (lastVertex == null) {
-            // 3a. polygon je prázdný: toto kliknutí je první vrchol
-            lastVertex = actualPosition;
-        } else {
-            // 3b. polygon už má vrchol: přidáme úsečku od posledního vrcholu k myši
-            //     (poslední vrchol = koncový bod poslední úsečky)
-            polygon.addLine(new Line(lastVertex, actualPosition, LINE_COLOR));
-            lastVertex = actualPosition;
-        }
-
-        // 4. překreslit scénu (polygon se uzavře hned, jakmile má 3 vrcholy)
+        dragLine = new Line(startPoint, startPoint, PREVIEW_COLOR);
         render();
     }
 
-    /**
-     * Zamkne polygon: označí ho jako dokončený, takže už nejde přidávat další vrcholy.
-     */
+
+      //"Zamkne" polygon: označí ho jako dokončený, takže už nejde přidávat další vrcholy (body)
+
     private void finishPolygon() {
         // 1. polygon musí mít alespoň 3 vrcholy = alespoň 2 úsečky
         if (polygon.getLines().size() < 2 || polygon.isFinished()) {
             return;
         }
 
-        // 2. označíme polygon jako dokončený
+        // 2. označím polygon jako dokončený
         polygon.setFinished(true);
 
         lastVertex = null;
+        previewPolygonLine = null;
         render();
     }
 
-    /** Převede událost myši na bod (x, y) v rastru. */
+    //Převede událost myši na bod (x, y) v rastru
     private Point getPoint(MouseEvent e) {
         return new Point(e.getX(), e.getY());
     }

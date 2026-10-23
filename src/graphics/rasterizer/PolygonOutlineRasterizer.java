@@ -3,11 +3,12 @@ package graphics.rasterizer;
 import model.Line;
 import model.Polygon;
 
+import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Vykreslí obrys polygonu pomocí úseček.
- */
+
+ //Vykreslí obrys polygonu pomocí úseček.
+
 public class PolygonOutlineRasterizer implements PolygonRasterizer {
 
     private final LineRasterizer lineRasterizer;
@@ -17,16 +18,21 @@ public class PolygonOutlineRasterizer implements PolygonRasterizer {
     }
 
     @Override
-    public void rasterize(Polygon polygon) {
-        List<Line> lines = polygon.getLines();
+    public void rasterize(Polygon polygon, Line previewLine) {
+        List<Line> lines = new ArrayList<>(polygon.getLines());
 
-        // vykreslíme všechny dosud vytvořené úsečky
+        // pružná čára se chová jako poslední úsečka polygonu
+        if (previewLine != null) {
+            lines.add(previewLine);
+        }
+
+        // vykreslím všechny dosud vytvořené úsečky
         for (Line line : lines) {
             lineRasterizer.rasterize(line);
         }
 
-        // uzavírací úsečku (poslední vrchol -> první vrchol) kreslíme,
-        // jakmile má polygon alespoň 3 vrcholy (= 2 úsečky)
+        // uzavírací úsečka vede z konce poslední úsečky (u náhledu z kurzoru) zpět do prvního bodu,
+        // takže při tažení jsou vidět dvě pružné čáry
         if (lines.size() > 1) {
             Line last = lines.get(lines.size() - 1);
             Line first = lines.get(0);

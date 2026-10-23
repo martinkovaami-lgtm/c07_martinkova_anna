@@ -3,13 +3,6 @@ package view;
 import javax.swing.*;
 import java.awt.*;
 
-/**
- * Represents the main application window that displays the {@link Canvas}.
- * The window initializes the canvas, configures the Swing frame, and provides access to the canvas.
- *
- * @author PGRF FIM UHK
- * @version 2026
- */
 public class Window extends JFrame {
 
     private final Canvas canvas;
