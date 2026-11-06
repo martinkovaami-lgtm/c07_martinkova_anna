@@ -1,6 +1,9 @@
 package controller;
 
+import graphics.clipping.PolygonClipper;
+import graphics.clipping.SutherlandHodgmanClipper;
 import graphics.filler.RecursiveSeedFiller;
+import graphics.filler.ScanlineFiller;
 import graphics.filler.SeedFiller;
 import graphics.filler.StackSeedFiller;
 import graphics.rasterizer.LineRasterizer;
@@ -29,11 +32,26 @@ public class Controller {
     private static final int PREVIEW_COLOR = Color.RED.getRGB();
     private static final int FILL_COLOR = new Color(0x58BFA9).getRGB();
 
+    // barvy pro ořezávání: původní polygon, ořezaný polygon a ořezávací trojúhelník
+    private static final int ORIGINAL_COLOR = new Color(0x9099A3).getRGB();
+    private static final int CLIPPED_COLOR = new Color(0xA4F2DF).getRGB();
+    private static final int CLIPPING_TRIANGLE_COLOR = new Color(0xE6B85C).getRGB();
+
+    // vrcholy ořezávacího trojúhelníku (konvexní polygon)
+    private static final List<Point> CLIPPING_TRIANGLE_VERTICES = List.of(
+            new Point(250, 100),
+            new Point(480, 470),
+            new Point(40, 470)
+    );
+
     private final Canvas canvas;
     private final Toolbar toolbar;
     private final LineRasterizer rasterizer;
     private final PolygonRasterizer polygonRasterizer;
     private final SeedFiller seedFiller;
+    private final ScanlineFiller scanlineFiller;
+    private final PolygonClipper clipper;
+    private final Polygon clippingTriangle;
 
 
     // polygon, který je vytvářený pravým tlačítkem
@@ -61,7 +79,13 @@ public class Controller {
         this.rasterizer = new TrivialLineRasterizer(canvas.getRaster());
         this.polygonRasterizer = new PolygonOutlineRasterizer(rasterizer);
         this.seedFiller = new StackSeedFiller(canvas.getRaster());
+        this.scanlineFiller = new ScanlineFiller(canvas.getRaster());
+        this.clipper = new SutherlandHodgmanClipper();
+        this.clippingTriangle = createPolygon(CLIPPING_TRIANGLE_VERTICES, CLIPPING_TRIANGLE_COLOR);
+
+
     }
+
 
     /* ---------------------------------------------- Hlavní funkce ---------------------------------------------- */
 
@@ -183,6 +207,13 @@ public class Controller {
     private void render() {
         canvas.clear();
 
+        // ořezání polygonu (včetně pružné čáry) ořezávacím trojúhelníkem - Sutherland-Hodgman
+        Polygon subject = withPreviewLine(polygon, previewPolygonLine);
+        Polygon clipped = clipper.clip(subject, clippingTriangle);
+
+        // výplň (scanline) se kreslí první, aby obrysy zůstaly nad ní
+        scanlineFiller.fill(clipped, FILL_COLOR);
+
         // samostatné úsečky z levého tlačítka
         for (Line line : straightLines) {
             rasterizer.rasterize(line);
@@ -201,15 +232,20 @@ public class Controller {
             rasterizer.rasterize(dragLine);
         }
 
+        // ořezaný polygon a ořezávací trojúhelník
+        polygonRasterizer.rasterize(withColor(clipped, CLIPPED_COLOR), null);
+        polygonRasterizer.rasterize(clippingTriangle, null);
+
         if (seedFillPoint != null) {
             seedFiller.fill(seedFillPoint.getX(), seedFillPoint.getY(), canvas.getBackgroundColor(), FILL_COLOR);
         }
 
-        // Vykreslení pružné čáry polygonu, pokud právě táhneme
 
 
         canvas.repaint();
     }
+
+
 
 
      //přidá novou úsečku polygonu při kliknutí pravým tlačítkem
@@ -274,6 +310,35 @@ public class Controller {
         lastVertex = null;
         previewPolygonLine = null;
         render();
+    }
+
+    private Polygon withColor(Polygon source, int color) {
+        Polygon result = new Polygon();
+        for (Line line : source.getLines()) {
+            result.addLine(new Line(line.getPoint1(), line.getPoint2(), color));
+        }
+        return result;
+    }
+
+    // vrátí kopii polygonu rozšířenou o pružnou čáru (pokud existuje)
+    private Polygon withPreviewLine(Polygon source, Line preview) {
+        Polygon result = new Polygon();
+        for (Line line : source.getLines()) {
+            result.addLine(line);
+        }
+        if (preview != null) {
+            result.addLine(preview);
+        }
+        return result;
+    }
+
+    // vytvoří polygon (otevřený řetězec úseček) ze seznamu vrcholů
+    private Polygon createPolygon(List<? extends Point> vertices, int color) {
+        Polygon result = new Polygon();
+        for (int i = 0; i + 1 < vertices.size(); i++) {
+            result.addLine(new Line(vertices.get(i), vertices.get(i + 1), color));
+        }
+        return result;
     }
 
     //Převede událost myši na bod (x, y) v rastru
