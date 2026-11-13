@@ -1,3 +1,4 @@
+
 package controller;
 
 import graphics.clipping.PolygonClipper;
@@ -18,10 +19,7 @@ import view.gui.Toolbar;
 
 import javax.swing.SwingUtilities;
 import java.awt.Color;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.event.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -128,7 +126,7 @@ public class Controller {
                             lastVertex = p;
                         }
 
-                        previewPolygonLine = new Line(lastVertex, p, PREVIEW_COLOR);
+                        previewPolygonLine = new Line(lastVertex, getLineEnd(e, lastVertex), PREVIEW_COLOR);
                         render();
                     }
                 }
@@ -143,22 +141,21 @@ public class Controller {
                 // při tažení levým tlačítkem se aktualizuje koncový bod náhledu
                 if (SwingUtilities.isLeftMouseButton(e) && dragLine != null) {
                     // Aktualizace pružné čáry pro úsečku
-                    dragLine = new Line(dragLine.getPoint1(), getPoint(e), PREVIEW_COLOR);
+                    dragLine = new Line(dragLine.getPoint1(), getLineEnd(e, dragLine.getPoint1()), PREVIEW_COLOR);
                     render();
                 } else if (SwingUtilities.isRightMouseButton(e) && previewPolygonLine != null && !polygon.isFinished()) {
                     // Aktualizace pružné čáry pro polygon
-                    previewPolygonLine = new Line(lastVertex, getPoint(e), PREVIEW_COLOR);
+                    previewPolygonLine = new Line(lastVertex, getLineEnd(e, lastVertex), PREVIEW_COLOR);
                     render();
                 }
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                Point endPoint = getPoint(e);
                 // puštění levého tlačítka: úsečka se stane trvalou
                 if (SwingUtilities.isLeftMouseButton(e) && dragLine != null) {
                     Point start = dragLine.getPoint1();
-                    Point end = dragLine.getPoint2();
+                    Point end = getLineEnd(e, start); // s SHIFTem vodorovně / svisle
                     dragLine = null; // náhled už nepotřebujeme
 
                     // Když jenom klikneš a netáhneš (start == konec) nic nevytvoří
@@ -172,7 +169,8 @@ public class Controller {
                     // Puštění pravého tlačítka: přidání hrany a vrcholu do polygonu
                     previewPolygonLine = null; // smazání náhledu
 
-                    // Přidáme hranu z předchozího vrcholu do aktuálního místa puštění
+                    // Přidáme hranu z předchozího vrcholu do aktuálního místa puštění (s SHIFTem vodorovně / svisle)
+                    Point endPoint = getLineEnd(e, lastVertex);
                     polygon.addLine(new Line(lastVertex, endPoint, LINE_COLOR));
 
                     // Tento nový bod se stává výchozím vrcholem pro další tažení
@@ -245,10 +243,26 @@ public class Controller {
         canvas.repaint();
     }
 
+    // Koncový bod úsečky: s SHIFTem se úsečka srovná na vodorovnou nebo svislou
+    private Point getLineEnd(MouseEvent event, Point startPoint) {
+        Point point = getPoint(event);
+        // Pokud není stisknutý SHIFT, vrátí se původní bod
+        if (!event.isShiftDown()) {
+            return point;
+        }
 
+        int dx = point.getX() - startPoint.getX();
+        int dy = point.getY() - startPoint.getY();
 
+        // Převažuje-li pohyb ve vodorovném směru, úsečka je vodorovná (stejné Y),
+        // jinak je svislá (stejné X)
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            return new Point(point.getX(), startPoint.getY());
+        }
+        return new Point(startPoint.getX(), point.getY());
+    }
 
-     //přidá novou úsečku polygonu při kliknutí pravým tlačítkem
+    //přidá novou úsečku polygonu při kliknutí pravým tlačítkem
 
     private void startLine(MouseEvent e) {
 
@@ -296,7 +310,7 @@ public class Controller {
     }
 
 
-      //"Zamkne" polygon: označí ho jako dokončený, takže už nejde přidávat další vrcholy (body)
+    //"Zamkne" polygon: označí ho jako dokončený, takže už nejde přidávat další vrcholy (body)
 
     private void finishPolygon() {
         // 1. polygon musí mít alespoň 3 vrcholy = alespoň 2 úsečky
@@ -346,3 +360,4 @@ public class Controller {
         return new Point(e.getX(), e.getY());
     }
 }
+ 
